@@ -6,6 +6,7 @@ import re
 import tempfile
 from datetime import datetime
 
+import requests
 import speech_recognition as sr
 import streamlit as st
 from deep_translator import GoogleTranslator
@@ -81,6 +82,8 @@ PLAYER_MIME_BY_FORMAT = {
     "wav": "audio/wav",
     "webm": "audio/webm",
 }
+
+GOOGLE_TRANSLATE_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
 
 
 def configure_page():
@@ -395,15 +398,69 @@ def split_text_for_translation(text, max_chars=4500):
     return chunks
 
 
-def translate_text(text, target_code):
+def normalize_text_for_compare(text):
+    return re.sub(r"\s+", " ", text or "").strip().casefold()
+
+
+def is_same_text(left, right):
+    return normalize_text_for_compare(left) == normalize_text_for_compare(right)
+
+
+def translate_with_google_endpoint(text, source_code, target_code):
+    response = requests.get(
+        GOOGLE_TRANSLATE_ENDPOINT,
+        params={
+            "client": "gtx",
+            "sl": source_code or "auto",
+            "tl": target_code,
+            "dt": "t",
+            "q": text,
+        },
+        timeout=20,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    translated = "".join(part[0] for part in payload[0] if part and part[0])
+
+    if not translated.strip():
+        raise RuntimeError("le service Google Translate n'a renvoyé aucun texte")
+
+    return translated.strip()
+
+
+def translate_chunk(text, source_code, target_code):
+    errors = []
+
+    try:
+        translated = GoogleTranslator(source=source_code or "auto", target=target_code).translate(text)
+        if translated and not is_same_text(translated, text):
+            return translated.strip()
+        errors.append("deep-translator a renvoyé le texte original")
+    except Exception as error:
+        errors.append(f"deep-translator: {error}")
+
+    try:
+        translated = translate_with_google_endpoint(text, source_code, target_code)
+        if translated and not is_same_text(translated, text):
+            return translated.strip()
+        errors.append("endpoint Google Translate a renvoyé le texte original")
+    except Exception as error:
+        errors.append(f"endpoint Google Translate: {error}")
+
+    raise RuntimeError("La traduction a échoué (" + " | ".join(errors) + ").")
+
+
+def translate_text(text, source_code, target_code):
     if not target_code:
         return ""
 
+    if source_code == target_code:
+        return text.strip()
+
     translated_parts = []
-    translator = GoogleTranslator(source="auto", target=target_code)
 
     for chunk in split_text_for_translation(text):
-        translated_parts.append(translator.translate(chunk))
+        translated_parts.append(translate_chunk(chunk, source_code, target_code))
 
     return "\n\n".join(translated_parts).strip()
 
@@ -443,20 +500,31 @@ def process_audio(
     )
 
     translation = ""
+    translation_error = ""
     if target_language["code"]:
         with st.spinner(f"Traduction vers {target_language['label']}..."):
-            translation = translate_text(transcription, target_language["code"])
+            try:
+                translation = translate_text(
+                    transcription,
+                    source_language["translate_code"],
+                    target_language["code"],
+                )
+            except RuntimeError as error:
+                translation_error = str(error)
 
     return {
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "source_name": source_name,
         "source_language_label": source_language["label"],
+        "source_language_code": source_language["translate_code"],
         "target_language_label": target_language["label"],
+        "target_language_code": target_language["code"],
         "detected_format": detected_format,
         "duration_seconds": len(audio) / 1000,
         "chunk_count": chunk_count,
         "transcription": transcription,
         "translation": translation,
+        "translation_error": translation_error,
         "warnings": warnings,
     }
 
@@ -473,6 +541,9 @@ def render_result(result, key_prefix):
         with st.expander("Segments non reconnus"):
             st.write("\n".join(result["warnings"]))
 
+    if result.get("translation_error"):
+        st.error(f"Traduction indisponible: {result['translation_error']}")
+
     col_left, col_right = st.columns(2)
     with col_left:
         st.text_area(
@@ -482,9 +553,14 @@ def render_result(result, key_prefix):
             key=f"{key_prefix}_transcription",
         )
     with col_right:
+        translation_display = result["translation"] or (
+            "Aucune traduction demandée."
+            if not result.get("target_language_code")
+            else "Aucune traduction disponible."
+        )
         st.text_area(
             f"Traduction - {result['target_language_label']}",
-            result["translation"] or "Aucune traduction demandée.",
+            translation_display,
             height=280,
             key=f"{key_prefix}_translation",
         )
