@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.1 - 2026-06-01
+
+### Corrige
+
+- Correction de la traduction qui pouvait renvoyer le texte source sans erreur.
+- Utilisation explicite de la langue source choisie pour traduire.
+- Ajout d'un fallback Google Translate quand le premier moteur renvoie une traduction identique au texte original.
+- Conservation de la transcription même si la traduction est temporairement indisponible.
+
 ## 2.0.0 - 2026-06-01
 
 ### Ajoute
