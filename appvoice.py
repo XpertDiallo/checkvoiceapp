@@ -1,4 +1,5 @@
 import io
+import hashlib
 import math
 import mimetypes
 import os
@@ -227,6 +228,10 @@ def configure_page():
 
 def get_language_by_label(label, languages):
     return next(language for language in languages if language["label"] == label)
+
+
+def stable_text_hash(text):
+    return hashlib.sha1((text or "").encode("utf-8")).hexdigest()[:12]
 
 
 def detect_audio_format(filename=None, mime_type=None, audio_bytes=None):
@@ -593,7 +598,7 @@ def render_result(result, key_prefix, target_language):
             "Transcription",
             result["transcription"],
             height=280,
-            key=f"{key_prefix}_transcription",
+            key=f"{key_prefix}_transcription_{stable_text_hash(result['transcription'])}",
         )
     with col_right:
         translation_display = result["translation"] or (
@@ -601,11 +606,20 @@ def render_result(result, key_prefix, target_language):
             if not result.get("target_language_code")
             else "Aucune traduction disponible."
         )
+        translation_key = "_".join(
+            [
+                key_prefix,
+                "translation",
+                str(result.get("target_language_code") or "none"),
+                stable_text_hash(result["transcription"]),
+                stable_text_hash(translation_display),
+            ]
+        )
         st.text_area(
             f"Traduction - {result['target_language_label']}",
             translation_display,
             height=280,
-            key=f"{key_prefix}_translation",
+            key=translation_key,
         )
 
     st.download_button(
