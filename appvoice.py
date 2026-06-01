@@ -84,6 +84,7 @@ PLAYER_MIME_BY_FORMAT = {
 }
 
 GOOGLE_TRANSLATE_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
+TRANSLATION_VERSION = 2
 
 
 def configure_page():
@@ -465,6 +466,49 @@ def translate_text(text, source_code, target_code):
     return "\n\n".join(translated_parts).strip()
 
 
+def translate_for_target(text, source_code, target_language):
+    if not target_language["code"]:
+        return "", ""
+
+    try:
+        return translate_text(text, source_code, target_language["code"]), ""
+    except RuntimeError as error:
+        return "", str(error)
+
+
+def refresh_translation_for_target(result, target_language):
+    target_code = target_language["code"]
+    needs_refresh = (
+        result.get("target_language_code") != target_code
+        or result.get("target_language_label") != target_language["label"]
+        or result.get("translation_version") != TRANSLATION_VERSION
+    )
+
+    if not needs_refresh:
+        return result
+
+    result["target_language_label"] = target_language["label"]
+    result["target_language_code"] = target_code
+
+    if not target_code:
+        result["translation"] = ""
+        result["translation_error"] = ""
+        result["translation_version"] = TRANSLATION_VERSION
+        return result
+
+    with st.spinner(f"Retraduction vers {target_language['label']}..."):
+        translation, translation_error = translate_for_target(
+            result["transcription"],
+            result.get("source_language_code") or "auto",
+            target_language,
+        )
+
+    result["translation"] = translation
+    result["translation_error"] = translation_error
+    result["translation_version"] = TRANSLATION_VERSION
+    return result
+
+
 def build_export(result):
     lines = [
         "CheckVoice - transcription vocale",
@@ -503,14 +547,11 @@ def process_audio(
     translation_error = ""
     if target_language["code"]:
         with st.spinner(f"Traduction vers {target_language['label']}..."):
-            try:
-                translation = translate_text(
-                    transcription,
-                    source_language["translate_code"],
-                    target_language["code"],
-                )
-            except RuntimeError as error:
-                translation_error = str(error)
+            translation, translation_error = translate_for_target(
+                transcription,
+                source_language["translate_code"],
+                target_language,
+            )
 
     return {
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -525,11 +566,13 @@ def process_audio(
         "transcription": transcription,
         "translation": translation,
         "translation_error": translation_error,
+        "translation_version": TRANSLATION_VERSION,
         "warnings": warnings,
     }
 
 
-def render_result(result, key_prefix):
+def render_result(result, key_prefix, target_language):
+    result = refresh_translation_for_target(result, target_language)
     st.success("Transcription terminée.")
 
     metric_columns = st.columns(3)
@@ -629,7 +672,7 @@ def render_record_tab(target_language, chunk_length_seconds):
                 st.error(str(error))
 
     if st.session_state.get("record_result"):
-        render_result(st.session_state.record_result, "recording")
+        render_result(st.session_state.record_result, "recording", target_language)
 
 
 def render_upload_tab(target_language, chunk_length_seconds):
@@ -685,7 +728,7 @@ def render_upload_tab(target_language, chunk_length_seconds):
                 st.error(str(error))
 
     if st.session_state.get("upload_result"):
-        render_result(st.session_state.upload_result, "upload")
+        render_result(st.session_state.upload_result, "upload", target_language)
 
 
 def main():
