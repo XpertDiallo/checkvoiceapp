@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.2 - 2026-06-01
+
+### Corrige
+
+- Retraduction automatique d'une transcription existante lorsque la langue cible est modifiée après l'enregistrement ou l'import audio.
+- Ajout d'une version de traduction en session pour éviter l'affichage d'une ancienne traduction avec un nouveau libellé de langue.
+
 ## 2.0.1 - 2026-06-01
 
 ### Corrige
