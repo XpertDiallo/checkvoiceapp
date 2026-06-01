@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.3 - 2026-06-01
+
+### Corrige
+
+- Correction du cache des zones de texte Streamlit: la traduction affichée change maintenant réellement quand la langue cible ou la transcription change.
+- Empêche l'affichage d'une ancienne traduction sous un nouveau libellé de langue.
+
 ## 2.0.2 - 2026-06-01
 
 ### Corrige
